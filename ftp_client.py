@@ -43,6 +43,19 @@ def subir_archivo(ftp):
     except Exception as e:
         print("Error:", e)
 
+def subir_archivo_param(ftp, ruta_local):
+    if not os.path.isfile(ruta_local):
+        print("El archivo no existe.")
+        return
+    try:
+        nombre = os.path.basename(ruta_local)
+        with open(ruta_local, "rb") as f:
+            ftp.storbinary(f"STOR {nombre}", f)
+        print(f"Archivo '{nombre}' subido al servidor exitosamente.")
+    except Exception as e:
+        print("Error al subir el archivo:", e)
+
+
 def descargar_archivo(ftp):
     remoto = input("Nombre del archivo remoto a descargar: ")
     local = input("Nombre local (deje vacío para usar el mismo): ")
@@ -72,11 +85,9 @@ def listar_contenido(ftp):
         for item in lista:
             try:
                 ftp.cwd(item)
-                # Si se pudo cambiar de directorio, es un directorio.
                 print(f"[DIR]  {item}")
                 ftp.cwd(directorio_actual)
             except ftplib.error_perm:
-                # Si falla, asumimos que es un archivo.
                 print(f"[FILE] {item}")
     except Exception as e:
         print("Error:", e)
@@ -109,11 +120,20 @@ def menu(ftp):
         else:
             print("Opción inválida.")
 
-def main():
+def main(ruta_archivo=None):
     ftp = conectar_ftp()
+    if ruta_archivo:
+        print("Subiendo el archivo recibido...")
+        subir_archivo_param(ftp, ruta_archivo)
+
+    # Luego de guardar, lo enviamos al menú
     menu(ftp)
     ftp.quit()
     print("Conexión cerrada.")
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if len(sys.argv) > 1:
+        main(sys.argv[1])
+    else:
+        main()

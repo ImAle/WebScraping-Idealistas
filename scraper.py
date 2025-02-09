@@ -1,6 +1,10 @@
 import random
+import tempfile
+import os
+from datetime import datetime
 import pandas as pd
 import time
+import ftp_client as ftp
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 import undetected_chromedriver as uc
@@ -8,6 +12,8 @@ from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+
 
 
 def tiempo_esperar():
@@ -25,12 +31,14 @@ def aplicar_precio(minimo, maximo):
 
     return filtro_min or filtro_max
 
-def extraer_info(data, pagina_actual):
+def extraer_info(data, pagina_actual, url_base):
     soup = BeautifulSoup(data, "html.parser")
     pisos = []
 
     anuncios = soup.find_all('div', class_="item-info-container")
-    if pagina_actual == 1: # Eliminamos el primer elemento que no corresponde con un anuncio en la primera página
+
+    # Eliminamos el primer elemento que no corresponde con un anuncio en la primera página de alquiler con filtro de precio
+    if pagina_actual == 1 and "alquiler-viviendas" in url_base and "con-precio" in url_base:
         anuncios.pop(0)
 
     for anuncio in anuncios:
@@ -60,6 +68,45 @@ def extraer_info(data, pagina_actual):
 
     return pisos
 
+def guardar_archivo(archivo):
+    default_nombre = f"idealistas_{datetime.now().strftime('%Y_%m_%d-%H')}.csv"
+
+    opcion = input("¿Desea guardar el archivo en el servidor (S) o localmente (L)? ").strip().upper()
+    if opcion == "S":
+        nuevo_nombre = input(f"Nombre remoto para el archivo (deje vacío para usar '{default_nombre}'): ").strip()
+        if not nuevo_nombre:
+            nuevo_nombre = default_nombre
+        if not nuevo_nombre.endswith(".csv"):
+            nuevo_nombre += ".csv"
+        try:
+            temp_dir = tempfile.gettempdir()
+            temp_filename = os.path.join(temp_dir, nuevo_nombre)
+            with open(temp_filename, "w", newline="", encoding="utf-8") as f:
+                f.write(archivo)
+
+            print(f"Archivo preparado para subir remotamente como '{nuevo_nombre}'.")
+
+            # Llamamos al cliente FTP pasándole la ruta con el nombre deseado
+            ftp.main(temp_filename)
+            os.remove(temp_filename)
+        except Exception as e:
+            print("Error al guardar para subir al servidor:", e)
+
+    elif opcion == "L":
+        nuevo_nombre = input(f"Nombre del archivo a guardar (deje vacío para usar '{default_nombre}'): ").strip()
+        if not nuevo_nombre:
+            nuevo_nombre = default_nombre
+        if not nuevo_nombre.endswith(".csv"):
+            nuevo_nombre += ".csv"
+        try:
+            with open(nuevo_nombre, "w", newline="", encoding="utf-8") as f:
+                f.write(archivo)
+            print(f"Archivo guardado localmente como {nuevo_nombre}")
+        except Exception as e:
+            print("Error al guardar localmente:", e)
+    else:
+        print("Opción no válida. No se realizó ninguna acción.")
+
 
 if __name__ == "__main__":
     # Datos a pedir
@@ -69,7 +116,12 @@ if __name__ == "__main__":
     opcion = input("¿Comprar o Alquilar?: ")
 
     entre_valores = aplicar_precio(precio_min, precio_max)
-    boton_habitaciones = f"rooms_{num_habitaciones}" if int(num_habitaciones) < 4 else f"rooms_4_more"
+
+    boton_habitaciones = ""
+
+    if num_habitaciones not in ("", 0, None):
+        boton_habitaciones = f"rooms_{num_habitaciones}" if int(num_habitaciones) < 4 else f"rooms_4_more"
+
     opcion_alquiler_compra = "venta-viviendas" if opcion.strip().lower() == "comprar" else "alquiler-viviendas"
 
     url_target = f"https://www.idealista.com/{opcion_alquiler_compra}/cadiz-cadiz/{entre_valores}"
@@ -126,13 +178,17 @@ if __name__ == "__main__":
     button_rechazar = ((WebDriverWait(browser, 10)).
                        until(EC.presence_of_element_located((By.CSS_SELECTOR, '[id=\"didomi-notice-disagree-button\"]'))))
 
-    # Aplicar filtro de habitaciones
-    check_habitaciones = (WebDriverWait(browser, 10).
-                          until(EC.presence_of_element_located((By.CSS_SELECTOR, f'[id="{boton_habitaciones}"]'))))
-
     # Simular comportamiento humano con movimientos de ratón y desplazamiento
     actions.move_to_element(button_rechazar).pause(tiempo_esperar()).click().perform()
-    actions.move_to_element(check_habitaciones).pause(tiempo_esperar()).click().perform()
+
+    # No buscar el botón si el usuario no introdució un valor
+    if boton_habitaciones != "":
+        # Aplicar filtro de habitaciones
+        check_habitaciones = (WebDriverWait(browser, 10).
+                              until(EC.presence_of_element_located((By.CSS_SELECTOR, f'[id="{boton_habitaciones}"]'))))
+
+        # Simular comportamiento humano con movimientos de ratón y desplazamiento
+        actions.move_to_element(check_habitaciones).pause(tiempo_esperar()).click().perform()
 
     # url_target adquiere el filtrado de habitaciones
     url_target = browser.current_url
@@ -145,7 +201,7 @@ if __name__ == "__main__":
         # Extraer el código fuente
         html = browser.page_source
         # Extraer los datos del código fuente
-        pisos.extend(extraer_info(html,pagina))
+        pisos.extend(extraer_info(html,pagina,url_target))
         print(f"Extraido datos de la página {pagina}")
         try: # Esperar a que el botón de 'siguiente' esté disponible y clickarlo
             boton_siguiente = (WebDriverWait(browser, 10)
@@ -155,12 +211,15 @@ if __name__ == "__main__":
         except Exception: # Si no hay 'siguiente' salta excepción y rompemos el bucle
             break
 
-    df = pd.DataFrame(pisos)
-    df.to_csv('pisos_idealistas.csv', index=False, encoding="utf-8")
-
     # Manejo de cookies y sesiones
     # Limpiamos cookies y almacenamiento local entre sesiones
     browser.delete_all_cookies()
     browser.execute_script("window.localStorage.clear();")
 
+    # Termina el scraping
     browser.quit()
+
+    # Manejamos el archivo csv
+    df = pd.DataFrame(pisos)
+    csv = df.to_csv(index=False, encoding="utf-8")
+    guardar_archivo(csv)
