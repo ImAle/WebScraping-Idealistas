@@ -179,84 +179,85 @@ if __name__ == "__main__":
     # Creación del navegador con las opciones
     browser = uc.Chrome(options=options)
 
-    # Simulación de resoluciones variables
-    browser.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    try:
+        # Simulación de resoluciones variables
+        browser.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
-    resoluciones = [
-        (1280, 720), (1366, 768), (1440, 900), (1536, 864)
-    ]
+        resoluciones = [
+            (1280, 720), (1366, 768), (1440, 900), (1536, 864)
+        ]
 
-    ancho, alto = random.choice(resoluciones)
+        ancho, alto = random.choice(resoluciones)
 
-    browser.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
-        "width": ancho,
-        "height": alto,
-        "deviceScaleFactor": 1,
-        "mobile": False
-    })
+        browser.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+            "width": ancho,
+            "height": alto,
+            "deviceScaleFactor": 1,
+            "mobile": False
+        })
 
-    # Evitar huellas de navegador
-    # Deshabilitamos WebDriver y sobrescribimos el navigator.webdriver
-    browser.execute_script("window.navigator.chrome = {runtime: {}};")
-    browser.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": """
-            Object.defineProperty(navigator, 'webdriver' {
-                get: () => undefined
-            });
-        """
-    })
-    # Navegar a la página
-    browser.get(url_target)
-    actions = ActionChains(browser)
+        # Evitar huellas de navegador
+        # Deshabilitamos WebDriver y sobrescribimos el navigator.webdriver
+        browser.execute_script("window.navigator.chrome = {runtime: {}};")
+        browser.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver' {
+                    get: () => undefined
+                });
+            """
+        })
+        # Navegar a la página
+        browser.get(url_target)
+        actions = ActionChains(browser)
 
-    # Rechazar cookies
-    button_rechazar = ((WebDriverWait(browser, 10)).
-                       until(EC.presence_of_element_located((By.CSS_SELECTOR, '[id=\"didomi-notice-disagree-button\"]'))))
-
-    # Simular comportamiento humano con movimientos de ratón y desplazamiento
-    actions.move_to_element(button_rechazar).pause(tiempo_esperar()).click().perform()
-
-    # No buscar el botón si el usuario no introdució un valor
-    if boton_habitaciones != "":
-        # Aplicar filtro de habitaciones
-        check_habitaciones = (WebDriverWait(browser, 10).
-                              until(EC.presence_of_element_located((By.CSS_SELECTOR, f'[id="{boton_habitaciones}"]'))))
+        # Rechazar cookies
+        button_rechazar = ((WebDriverWait(browser, 10)).
+                           until(EC.presence_of_element_located((By.CSS_SELECTOR, '[id=\"didomi-notice-disagree-button\"]'))))
 
         # Simular comportamiento humano con movimientos de ratón y desplazamiento
-        actions.move_to_element(check_habitaciones).pause(tiempo_esperar()).click().perform()
+        actions.move_to_element(button_rechazar).pause(tiempo_esperar()).click().perform()
 
-    # url_target adquiere el filtrado de habitaciones
-    url_target = browser.current_url
+        # No buscar el botón si el usuario no introdució un valor
+        if boton_habitaciones != "":
+            # Aplicar filtro de habitaciones
+            check_habitaciones = (WebDriverWait(browser, 10).
+                                  until(EC.presence_of_element_located((By.CSS_SELECTOR, f'[id="{boton_habitaciones}"]'))))
 
-    pisos = []
-    pagina = 1
-    while True:
-        # Tiempo de espera aleatorio
-        time.sleep(tiempo_esperar())
-        # Extraer el código fuente
-        html = browser.page_source
-        # Extraer los links a los pisos filtrados
-        pisos.extend(obtener_enlace(html,pagina,url_target))
-        print(f"Extraido links de la página {pagina}")
-        try: # Esperar a que el botón de 'siguiente' esté disponible y clickarlo
-            boton_siguiente = (WebDriverWait(browser, 10)
-            .until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.icon-arrow-right-after"))))
-            actions.move_to_element(boton_siguiente).pause(tiempo_esperar()).click().perform()
-            pagina += 1
-        except Exception: # Si no hay 'siguiente' salta excepción y rompemos el bucle
-            break
+            # Simular comportamiento humano con movimientos de ratón y desplazamiento
+            actions.move_to_element(check_habitaciones).pause(tiempo_esperar()).click().perform()
 
-    print(pisos)
-    print(len(pisos))
-    info = extraer_info(pisos)
+        # url_target adquiere el filtrado de habitaciones
+        url_target = browser.current_url
 
-    # Manejo de cookies y sesiones
-    # Limpiamos cookies y almacenamiento local entre sesiones
-    browser.delete_all_cookies()
-    browser.execute_script("window.localStorage.clear();")
+        pisos = []
+        pagina = 1
+        while True:
+            # Tiempo de espera aleatorio
+            time.sleep(tiempo_esperar())
+            # Extraer el código fuente
+            html = browser.page_source
+            # Extraer los links a los pisos filtrados
+            pisos.extend(obtener_enlace(html,pagina,url_target))
+            print(f"Extraido links de la página {pagina}")
+            try: # Esperar a que el botón de 'siguiente' esté disponible y clickarlo
+                boton_siguiente = (WebDriverWait(browser, 10)
+                .until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.icon-arrow-right-after"))))
+                actions.move_to_element(boton_siguiente).pause(tiempo_esperar()).click().perform()
+                pagina += 1
+            except Exception: # Si no hay 'siguiente' salta excepción y rompemos el bucle
+                break
 
-    # Termina el scraping
-    browser.quit()
+        # Extraemos la información de cada piso
+        info = extraer_info(pisos)
+
+    finally:
+        # Manejo de cookies y sesiones
+        # Limpiamos cookies y almacenamiento local entre sesiones
+        browser.delete_all_cookies()
+        browser.execute_script("window.localStorage.clear();")
+
+        # Termina el scraping
+        browser.quit()
 
     # Manejamos el archivo csv
     df = pd.DataFrame(info)
