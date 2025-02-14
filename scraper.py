@@ -13,9 +13,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-
-
-
 def tiempo_esperar():
     return random.uniform(1.5, 4.5)
 
@@ -31,7 +28,60 @@ def aplicar_precio(minimo, maximo):
 
     return filtro_min or filtro_max
 
-def extraer_info(data, pagina_actual, url_base):
+def extraer_info(pisos):
+    info = []
+
+    for piso in pisos:
+        time.sleep(tiempo_esperar()-1)
+        browser.get(piso)
+        html = BeautifulSoup(browser.page_source, 'html.parser')
+
+        try:
+            localizacion = html.find('span', class_='main-info__title-main').text.strip()
+        except AttributeError:
+            localizacion = "N/A"
+
+        try:
+            elemento_precio = html.find('span', class_='info-data-price')
+            precio = elemento_precio.find('span', class_='txt-bold').text.strip() + ' €'
+        except AttributeError:
+            precio = "N/A"
+
+        try:
+            # Extraer características
+            div_caracteristicas = html.find('div', class_='info-features')
+            spans = div_caracteristicas.find_all('span')
+
+            metros_cuadrados = spans[0].text.strip() if len(spans) > 0 else "N/A"
+            habitaciones = spans[1].text.strip() if len(spans) > 1 else "N/A"
+            planta = spans[2].text.strip() if len(spans) > 2 else "N/A"
+        except AttributeError:
+            metros_cuadrados = habitaciones = planta = "N/A"
+
+        try:
+            # Extraer características básicas (excluyendo m² y habitaciones)
+            div_extra = html.find('div', class_='details-property_features')
+            items_extra = [
+                li.text.strip() for li in div_extra.find_all('li')
+                if 'm²' not in li.text and 'habitacion' not in li.text.lower()
+            ]
+        except AttributeError:
+            items_extra = []
+
+        info.append({
+            "localizacion": localizacion,
+            "habitaciones": habitaciones,
+            "precio": precio,
+            "espacio": metros_cuadrados,
+            "planta": planta,
+            "extras": items_extra,
+            "link": piso,
+        })
+
+    return info
+
+# Extraigo los links a los espejos
+def obtener_enlace(data, pagina_actual, url_base):
     soup = BeautifulSoup(data, "html.parser")
     pisos = []
 
@@ -43,28 +93,13 @@ def extraer_info(data, pagina_actual, url_base):
 
     for anuncio in anuncios:
         try:
-            localizacion = anuncio.find("a", class_="item-link").text.strip()
+            anuncio_enlace = anuncio.find("a", class_="item-link")
+            enlace = anuncio_enlace['href']
         except AttributeError:
-            localizacion = "N/A"
-        try:
-            precio = anuncio.find("span", class_="item-price h2-simulated").text.replace("/mes", "").strip()
-        except AttributeError:
-            precio = "N/A"
+            enlace = None
 
-        detalles_div = anuncio.find("div", class_="item-detail-char")
-        detalles = detalles_div.find_all("span", class_="item-detail") if detalles_div else []
-
-        habitaciones = detalles[0].text.replace("hab.", "").strip() if len(detalles) > 0 else "N/A"
-        espacio = detalles[1].text.replace("m²", "").strip() if len(detalles) > 1 else "N/A"
-        planta = detalles[2].text.strip() if len(detalles) > 2 else "N/A"
-
-        pisos.append({
-            "localizacion": localizacion,
-            "precio": precio,
-            "habitaciones": habitaciones,
-            "espacio": espacio,
-            "planta": planta
-        })
+        if enlace is not None:
+            pisos.append("https://www.idealista.com" + enlace)
 
     return pisos
 
@@ -200,9 +235,9 @@ if __name__ == "__main__":
         time.sleep(tiempo_esperar())
         # Extraer el código fuente
         html = browser.page_source
-        # Extraer los datos del código fuente
-        pisos.extend(extraer_info(html,pagina,url_target))
-        print(f"Extraido datos de la página {pagina}")
+        # Extraer los links a los pisos filtrados
+        pisos.extend(obtener_enlace(html,pagina,url_target))
+        print(f"Extraido links de la página {pagina}")
         try: # Esperar a que el botón de 'siguiente' esté disponible y clickarlo
             boton_siguiente = (WebDriverWait(browser, 10)
             .until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.icon-arrow-right-after"))))
@@ -210,6 +245,10 @@ if __name__ == "__main__":
             pagina += 1
         except Exception: # Si no hay 'siguiente' salta excepción y rompemos el bucle
             break
+
+    print(pisos)
+    print(len(pisos))
+    info = extraer_info(pisos)
 
     # Manejo de cookies y sesiones
     # Limpiamos cookies y almacenamiento local entre sesiones
@@ -220,6 +259,6 @@ if __name__ == "__main__":
     browser.quit()
 
     # Manejamos el archivo csv
-    df = pd.DataFrame(pisos)
+    df = pd.DataFrame(info)
     csv = df.to_csv(index=False, encoding="utf-8")
     guardar_archivo(csv)
