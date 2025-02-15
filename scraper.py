@@ -87,10 +87,6 @@ def obtener_enlace(data, pagina_actual, url_base):
 
     anuncios = soup.find_all('div', class_="item-info-container")
 
-    # Eliminamos el primer elemento que no corresponde con un anuncio en la primera página de alquiler con filtro de precio
-    if pagina_actual == 1 and "alquiler-viviendas" in url_base and "con-precio" in url_base:
-        anuncios.pop(0)
-
     for anuncio in anuncios:
         try:
             anuncio_enlace = anuncio.find("a", class_="item-link")
@@ -98,7 +94,7 @@ def obtener_enlace(data, pagina_actual, url_base):
         except AttributeError:
             enlace = None
 
-        if enlace is not None:
+        if enlace is not None and "inmueble" in enlace:
             pisos.append("https://www.idealista.com" + enlace)
 
     return pisos
