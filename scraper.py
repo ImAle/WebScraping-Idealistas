@@ -91,7 +91,7 @@ def obtener_enlace(data, pagina_actual, url_base):
         try:
             anuncio_enlace = anuncio.find("a", class_="item-link")
             enlace = anuncio_enlace['href']
-        except AttributeError:
+        except Exception:
             enlace = None
 
         if enlace is not None and "inmueble" in enlace:
